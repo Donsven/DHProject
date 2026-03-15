@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../node_modules/.prisma/client"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id              String            @id @default(uuid())
+  name            String
+  email           String            @unique
+  level           String            @default("standard") // junior | standard | senior
+  isActive        Boolean           @default(true)
+  createdAt       DateTime          @default(now())
+  tasks           Task[]            @relation("AssignedAgent")
+  taskEvents      TaskEvent[]
+  capabilities    AgentCapability[]
+}
+
+model TaskType {
+  slug               String            @id
+  displayName        String
+  basePriority       Int               @default(50) // 0-100
+  requiresBusinessHours Boolean        @default(false)
+  minAgentLevel      String            @default("junior")
+  estimatedMinutes   Int               @default(15)
+  instructions       String            @default("")
+  tasks              Task[]
+  agentCapabilities  AgentCapability[]
+}
+
+model AgentCapability {
+  id            String   @id @default(uuid())
+  agentId       String
+  taskTypeSlug  String
+  agent         Agent    @relation(fields: [agentId], references: [id])
+  taskType      TaskType @relation(fields: [taskTypeSlug], references: [slug])
+
+  @@unique([agentId, taskTypeSlug])
+}
+
+model Customer {
+  id       String @id @default(uuid())
+  name     String
+  slaTier  String @default("standard") // 1h | 4h | 24h | standard
+  tasks    Task[]
+}
+
+model Task {
+  id               String      @id @default(uuid())
+  taskTypeSlug     String
+  customerId       String?
+  status           String      @default("pending") // pending | assigned | completed | failed | escalated
+  assignedAgentId  String?
+  metadata         String      @default("{}")
+  createdAt        DateTime    @default(now())
+  slaDeadline      DateTime?
+  assignedAt       DateTime?
+  completedAt      DateTime?
+  deferUntil       DateTime?
+  requiredLevel    String?     // overrides task type min level on escalation
+  escalationCount  Int         @default(0)
+  priorityOverride Int?        // manual manager boost
+  notes            String?
+
+  taskType         TaskType    @relation(fields: [taskTypeSlug], references: [slug])
+  customer         Customer?   @relation(fields: [customerId], references: [id])
+  assignedAgent    Agent?      @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+  events           TaskEvent[]
+
+  @@index([status, deferUntil])
+  @@index([assignedAgentId])
+  @@index([slaDeadline])
+}
+
+model TaskEvent {
+  id        String   @id @default(uuid())
+  taskId    String
+  agentId   String?
+  eventType String   // assigned | completed | failed | escalated | sla_breached | deferred | timeout_requeued
+  details   String   @default("{}")
+  createdAt DateTime @default(now())
+
+  task      Task     @relation(fields: [taskId], references: [id])
+  agent     Agent?   @relation(fields: [agentId], references: [id])
+
+  @@index([taskId])
+}
